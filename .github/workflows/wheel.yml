@@ -1,0 +1,91 @@
+name: Build Free-Threading Wheels
+
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build_wheels:
+    name: Build cp314t wheels on Linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install cibuildwheel
+        run: python -m pip install cibuildwheel==3.3.1
+
+      - name: Build wheels
+        run: python -m cibuildwheel --output-dir wheelhouse
+        env:
+          # Only build free-threaded Python 3.14
+          CIBW_BUILD: "cp314t-*"
+          CIBW_ARCHS_LINUX: "x86_64"
+          CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
+          # Skip musllinux and PyPy
+          CIBW_SKIP: "pp* *-musllinux_*"
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: hiredis-cp314t-linux-wheels
+          path: ./wheelhouse/*.whl
+
+  test_freethreading:
+    name: Test free-threading compatibility
+    needs: build_wheels
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.14t
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14t"
+
+      - name: Download wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: hiredis-cp314t-linux-wheels
+          path: wheelhouse
+
+      - name: Install and test
+        run: |
+          pip install wheelhouse/*.whl
+          python -c "
+          import sys
+          print(f'Python: {sys.version}')
+          print(f'GIL enabled before import: {sys._is_gil_enabled()}')
+
+          import hiredis
+          print(f'hiredis version: {hiredis.__version__}')
+          print(f'GIL enabled after import: {sys._is_gil_enabled()}')
+
+          # Test basic functionality
+          reader = hiredis.Reader()
+          reader.feed(b'+OK\r\n')
+          assert reader.gets() == b'OK'
+
+          # Test pack_command
+          packed = hiredis.pack_command(('SET', 'key', 'value'))
+          assert packed == b'*3\r\n\$3\r\nSET\r\n\$3\r\nkey\r\n\$5\r\nvalue\r\n'
+
+          if sys._is_gil_enabled():
+              print('FAILURE: GIL was re-enabled after hiredis import')
+              sys.exit(1)
+          else:
+              print('SUCCESS: GIL remains disabled after hiredis import')
+          "

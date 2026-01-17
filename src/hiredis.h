@@ -4,6 +4,21 @@
 #include <Python.h>
 #include <hiredis/read.h>
 
+/* Compatibility for Python < 3.10 */
+#if PY_VERSION_HEX < 0x030A0000
+static inline int
+PyModule_AddObjectRef(PyObject *module, const char *name, PyObject *value)
+{
+    int ret;
+    Py_INCREF(value);
+    ret = PyModule_AddObject(module, name, value);
+    if (ret < 0) {
+        Py_DECREF(value);
+    }
+    return ret;
+}
+#endif
+
 #ifndef PyMODINIT_FUNC	/* declarations for DLL import/export */
 #define PyMODINIT_FUNC void
 #endif

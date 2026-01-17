@@ -37,55 +37,82 @@ PyMethodDef methods[] = {
     {NULL},
 };
 
+/* Keep pointer around for other classes to access the module state. */
+PyObject *mod_hiredis;
+
+/* Multi-phase initialization exec function */
+static int hiredis_exec(PyObject *m) {
+    if (PyType_Ready(&hiredis_ReaderType) < 0) {
+        return -1;
+    }
+
+    PushNotificationType.tp_base = &PyList_Type;
+    if (PyType_Ready(&PushNotificationType) < 0) {
+        return -1;
+    }
+
+    /* Store module pointer for other classes to access state */
+    mod_hiredis = m;
+
+    /* Setup custom exceptions */
+    GET_STATE(m)->HiErr_Base =
+        PyErr_NewException(MOD_HIREDIS ".HiredisError", PyExc_Exception, NULL);
+    if (GET_STATE(m)->HiErr_Base == NULL) {
+        return -1;
+    }
+    GET_STATE(m)->HiErr_ProtocolError =
+        PyErr_NewException(MOD_HIREDIS ".ProtocolError", GET_STATE(m)->HiErr_Base, NULL);
+    if (GET_STATE(m)->HiErr_ProtocolError == NULL) {
+        return -1;
+    }
+    GET_STATE(m)->HiErr_ReplyError =
+        PyErr_NewException(MOD_HIREDIS ".ReplyError", GET_STATE(m)->HiErr_Base, NULL);
+    if (GET_STATE(m)->HiErr_ReplyError == NULL) {
+        return -1;
+    }
+
+    if (PyModule_AddObjectRef(m, "HiredisError", GET_STATE(m)->HiErr_Base) < 0) {
+        return -1;
+    }
+    if (PyModule_AddObjectRef(m, "ProtocolError", GET_STATE(m)->HiErr_ProtocolError) < 0) {
+        return -1;
+    }
+    if (PyModule_AddObjectRef(m, "ReplyError", GET_STATE(m)->HiErr_ReplyError) < 0) {
+        return -1;
+    }
+
+    if (PyModule_AddObjectRef(m, "Reader", (PyObject *)&hiredis_ReaderType) < 0) {
+        return -1;
+    }
+
+    if (PyModule_AddObjectRef(m, "PushNotification", (PyObject *)&PushNotificationType) < 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static PyModuleDef_Slot hiredis_slots[] = {
+    {Py_mod_exec, hiredis_exec},
+#ifdef Py_GIL_DISABLED
+    {Py_mod_gil, Py_MOD_GIL_NOT_USED},
+#endif
+    {0, NULL}
+};
+
 static struct PyModuleDef hiredis_ModuleDef = {
     PyModuleDef_HEAD_INIT,
     MOD_HIREDIS,
     NULL,
     sizeof(struct hiredis_ModuleState), /* m_size */
     methods, /* m_methods */
-    NULL, /* m_reload */
+    hiredis_slots, /* m_slots */
     hiredis_ModuleTraverse, /* m_traverse */
     hiredis_ModuleClear, /* m_clear */
     NULL /* m_free */
 };
 
-/* Keep pointer around for other classes to access the module state. */
-PyObject *mod_hiredis;
-
 PyMODINIT_FUNC PyInit_hiredis(void)
-
 {
-    if (PyType_Ready(&hiredis_ReaderType) < 0) {
-        return NULL;
-    }
-
-    PushNotificationType.tp_base = &PyList_Type;
-    if (PyType_Ready(&PushNotificationType) < 0) {
-        return NULL;
-    }
-
-    mod_hiredis = PyModule_Create(&hiredis_ModuleDef);
-
-    /* Setup custom exceptions */
-    HIREDIS_STATE->HiErr_Base =
-        PyErr_NewException(MOD_HIREDIS ".HiredisError", PyExc_Exception, NULL);
-    HIREDIS_STATE->HiErr_ProtocolError =
-        PyErr_NewException(MOD_HIREDIS ".ProtocolError", HIREDIS_STATE->HiErr_Base, NULL);
-    HIREDIS_STATE->HiErr_ReplyError =
-        PyErr_NewException(MOD_HIREDIS ".ReplyError", HIREDIS_STATE->HiErr_Base, NULL);
-
-    Py_INCREF(HIREDIS_STATE->HiErr_Base);
-    PyModule_AddObject(mod_hiredis, "HiredisError", HIREDIS_STATE->HiErr_Base);
-    Py_INCREF(HIREDIS_STATE->HiErr_ProtocolError);
-    PyModule_AddObject(mod_hiredis, "ProtocolError", HIREDIS_STATE->HiErr_ProtocolError);
-    Py_INCREF(HIREDIS_STATE->HiErr_ReplyError);
-    PyModule_AddObject(mod_hiredis, "ReplyError", HIREDIS_STATE->HiErr_ReplyError);
-
-    Py_INCREF(&hiredis_ReaderType);
-    PyModule_AddObject(mod_hiredis, "Reader", (PyObject *)&hiredis_ReaderType);
-
-    Py_INCREF(&PushNotificationType);
-    PyModule_AddObject(mod_hiredis, "PushNotification", (PyObject *)&PushNotificationType);
-
-    return mod_hiredis;
+    return PyModuleDef_Init(&hiredis_ModuleDef);
 }

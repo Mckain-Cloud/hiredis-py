@@ -4,17 +4,14 @@ try:
     from setuptools import setup, Extension
 except ImportError:
     from distutils.core import setup, Extension
-import importlib
+import runpy
 import glob
 import io
 import sys
 
 
 def version():
-    loader = importlib.machinery.SourceFileLoader(
-        "hiredis.version", "hiredis/version.py")
-    module = loader.load_module()
-    return module.__version__
+    return runpy.run_path("hiredis/version.py")["__version__"]
 
 
 def get_sources():
@@ -64,7 +61,7 @@ setup(
     packages=["hiredis"],
     package_data={"hiredis": ["hiredis.pyi", "py.typed"]},
     ext_modules=[ext],
-    python_requires=">=3.8",
+    python_requires=">=3.9",
     project_urls={
         "Changes": "https://github.com/redis/hiredis-py/releases",
         "Issue tracker": "https://github.com/redis/hiredis-py/issues",
@@ -78,13 +75,13 @@ setup(
         'Programming Language :: C',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3 :: Only',
-        'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',
         'Programming Language :: Python :: 3.13',
         'Programming Language :: Python :: 3.14',
+        'Programming Language :: Python :: 3.15',
         'Programming Language :: Python :: Implementation :: CPython',
         'Topic :: Software Development',
     ],

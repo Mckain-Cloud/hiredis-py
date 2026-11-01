@@ -25,7 +25,8 @@ jobs:
           python-version: "3.12"
 
       - name: Install cibuildwheel
-        run: python -m pip install "cibuildwheel>=4.3,<5"
+        # exact pin: release wheels must be reproducible
+        run: python -m pip install "cibuildwheel==4.3.5"
 
       - name: Build wheels
         run: python -m cibuildwheel --output-dir wheelhouse
@@ -92,3 +93,36 @@ jobs:
           else:
               print('SUCCESS: GIL remains disabled after hiredis import')
           "
+
+  # Publish the tested wheels as a release so consumers (granian-python wheels/) can pin a
+  # permanent, CI-built artifact instead of a local build or a 90-day workflow artifact.
+  # Tag = v<package version with + replaced by ->, e.g. 3.5.0+ft1 -> v3.5.0-ft1.
+  publish_release:
+    name: Publish release
+    needs: test_freethreading
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download wheels
+        uses: actions/download-artifact@v4
+        with:
+          name: hiredis-ft-linux-wheels
+          path: wheelhouse
+
+      - name: Create or replace release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(python3 -c "import runpy; print(runpy.run_path('hiredis/version.py')['__version__'])")
+          TAG="v${VERSION/+/-}"
+          (cd wheelhouse && sha256sum *.whl > SHA256SUMS)
+          cat wheelhouse/SHA256SUMS
+          gh release delete "$TAG" --yes --cleanup-tag --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
+          gh release create "$TAG" wheelhouse/*.whl wheelhouse/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "hiredis $VERSION (free-threading)" \
+            --notes "Free-threaded hiredis $VERSION: upstream v${VERSION%%+*} + Py_mod_gil = Py_MOD_GIL_NOT_USED. cp314t / cp315 / cp315t manylinux_2_28 x86_64, built by cibuildwheel 4.3.5 in run $GITHUB_RUN_ID; GIL-off import tested on 3.14t and 3.15t."

@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build_wheels:
-    name: Build cp314t wheels on Linux
+    name: Build cp314t/cp315/cp315t wheels on Linux
     runs-on: ubuntu-latest
 
     steps:
@@ -25,13 +25,15 @@ jobs:
           python-version: "3.12"
 
       - name: Install cibuildwheel
-        run: python -m pip install cibuildwheel==3.3.1
+        run: python -m pip install "cibuildwheel>=4.3,<5"
 
       - name: Build wheels
         run: python -m cibuildwheel --output-dir wheelhouse
         env:
-          # Only build free-threaded Python 3.14
-          CIBW_BUILD: "cp314t-*"
+          # Free-threaded 3.14/3.15 plus regular 3.15 (granian-python 3.15 base)
+          # (cibuildwheel 4 builds free-threaded interpreters by default; the 3.x
+          # CIBW_ENABLE=cpython-freethreading group no longer exists)
+          CIBW_BUILD: "cp314t-* cp315-* cp315t-*"
           CIBW_ARCHS_LINUX: "x86_64"
           CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
           # Skip musllinux and PyPy
@@ -40,29 +42,32 @@ jobs:
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
-          name: hiredis-cp314t-linux-wheels
+          name: hiredis-ft-linux-wheels
           path: ./wheelhouse/*.whl
 
   test_freethreading:
-    name: Test free-threading compatibility
+    name: Test free-threading compatibility (${{ matrix.python }})
     needs: build_wheels
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.14t", "3.15t"]
 
     steps:
-      - name: Set up Python 3.14t
+      - name: Set up Python ${{ matrix.python }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14t"
+          python-version: ${{ matrix.python }}
 
       - name: Download wheels
         uses: actions/download-artifact@v4
         with:
-          name: hiredis-cp314t-linux-wheels
+          name: hiredis-ft-linux-wheels
           path: wheelhouse
 
       - name: Install and test
         run: |
-          pip install wheelhouse/*.whl
+          pip install --no-index --find-links wheelhouse hiredis
           python -c "
           import sys
           print(f'Python: {sys.version}')
